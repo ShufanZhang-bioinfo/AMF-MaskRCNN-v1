@@ -4,20 +4,61 @@ library(stringr)
 getwd()
 setwd("/Users/lovely_shufan/Dropbox (Edison_Lab@UGA)/AMF/AMF Imaging 2022/0_inference_using_MaskRCNN_2021/2_infer_result/GA_GWAS_2022/")
 list.files()
-data_blk2 = read.csv("block2_segmentation.csv", header = TRUE, stringsAsFactors = FALSE) 
+data_blk2 = read.csv("block2_segmentation_image_complete.txt", header = TRUE, stringsAsFactors = FALSE) 
+data_blk8 = read.csv("block8_segmentation_image_complete.txt", header = TRUE, stringsAsFactors = FALSE) 
+data_blk10 = read.csv("block10_segmentation_image_complete.txt", header = TRUE, stringsAsFactors = FALSE) 
+rbind(data_blk2, data_blk8, data_blk10) -> raw
+##=============================================================================================================
+##              Initial exploration and data cleaning
+##=============================================================================================================
+# check for NAs
+colSums(is.na(raw))
+raw[!is.na(raw$area),] -> raw # removed segmentation with 0 area
 
-table(data_blk2$filename, data_blk2$annotations)
+# get accession names
+accession <- str_extract(raw$filename, "(?<=/)[^/_]+(?=_[^/]+)")
 
-# get accession name for block2 data
-filenames <- strsplit(data_blk2$filename, split = "/")
+# clean up NAs in accession names
+table(is.na(accession))
+unique(raw[is.na(accession),]$filename)
+accession[is.na(accession)] <- 'PI521280'
+
+# examine abnormal accession names
+abn_accession <- c("RecognizedCode-109-1", "GWAS",                
+                   "RecognizedCode-77-2", "e2.1")
+raw[accession %in% abn_accession,]
+
+# fix abnormal accession name 'e2.1' by replacing it with 'PI656065'
+accession[accession == "e2.1"] <- "PI656065"
+
+# fix abnormal accession name "GWAS" for accession 'PI569433'
+raw$accession <- accession
+raw[raw$accession == "GWAS", ] -> tmp
+raw[raw$filename == "/Volumes/easystore/Block10/GWAS_2021_10x_profile2.1_PI569433_C09_R02-72-2_8_2023-13-19-12.czi",]$accession <- "PI569433" 
+
+# fix abnormal accession name "GWAS" for 21 accessions using regex pattern
+raw[!raw$accession == "GWAS", ] -> part1
+raw[raw$accession == "GWAS", ] -> part2
+part2$accession <- str_extract(part2$filename, "(?<=/)[^/]+(?=/[^/]+$)") 
+rbind(part1, part2) -> raw
+
+# temporarily remove "RecognizedCode-109-1" "RecognizedCode-77-2"
+abn_accession <- c("RecognizedCode-109-1", "RecognizedCode-77-2")
+raw[!raw$accession %in% abn_accession, ] -> seg
+colSums(is.na(seg))
+
+# fix accession names
+raw[raw$accession == "e2.1"] <- "PI656065"
+filenames <- strsplit(raw$filename, split = "/")
+filenames[[1]][6]
 plantid = c()
 for (i in 1:length(filenames)){
   tmp = filenames[[i]][7]
   id = substr(tmp, 1, nchar(tmp)-4)
   plantid = c(plantid, id)
 }
-data_blk2$plantid <- plantid
-unique(plantid)
+raw$plantid <- plantid
+length(unique(plantid))
 
 # fix plant ids
 data_blk2[data_blk2$plantid == "e2.1_PI656065_C0", ]$plantid <- "PI656065"
