@@ -9,7 +9,7 @@ data_blk8 = read.csv("block8_segmentation_image_complete.txt", header = TRUE, st
 data_blk10 = read.csv("block10_segmentation_image_complete.txt", header = TRUE, stringsAsFactors = FALSE) 
 rbind(data_blk2, data_blk8, data_blk10) -> raw
 ##=============================================================================================================
-##              Initial exploration and data cleaning
+##                                Data cleaning
 ##=============================================================================================================
 # check for NAs
 colSums(is.na(raw))
@@ -17,6 +17,12 @@ raw[!is.na(raw$area),] -> raw # removed segmentation with 0 area
 
 # get accession names
 accession <- str_extract(raw$filename, "(?<=/)[^/_]+(?=_[^/]+)")
+raw$accession <- accession
+
+# get field position
+field <- str_extract(raw$filename, "C\\d+_R\\d+")
+raw$fieldposition <- field 
+table(nchar(field))
 
 # clean up NAs in accession names
 table(is.na(accession))
@@ -26,15 +32,10 @@ accession[is.na(accession)] <- 'PI521280'
 # examine abnormal accession names
 abn_accession <- c("RecognizedCode-109-1", "GWAS",                
                    "RecognizedCode-77-2", "e2.1")
-raw[accession %in% abn_accession,]
+unique(raw[accession %in% abn_accession,]$filename)
 
 # fix abnormal accession name 'e2.1' by replacing it with 'PI656065'
 accession[accession == "e2.1"] <- "PI656065"
-
-# fix abnormal accession name "GWAS" for accession 'PI569433'
-raw$accession <- accession
-raw[raw$accession == "GWAS", ] -> tmp
-raw[raw$filename == "/Volumes/easystore/Block10/GWAS_2021_10x_profile2.1_PI569433_C09_R02-72-2_8_2023-13-19-12.czi",]$accession <- "PI569433" 
 
 # fix abnormal accession name "GWAS" for 21 accessions using regex pattern
 raw[!raw$accession == "GWAS", ] -> part1
@@ -47,34 +48,59 @@ abn_accession <- c("RecognizedCode-109-1", "RecognizedCode-77-2")
 raw[!raw$accession %in% abn_accession, ] -> seg
 colSums(is.na(seg))
 
-# fix accession names
-raw[raw$accession == "e2.1"] <- "PI656065"
-filenames <- strsplit(raw$filename, split = "/")
-filenames[[1]][6]
-plantid = c()
-for (i in 1:length(filenames)){
-  tmp = filenames[[i]][7]
-  id = substr(tmp, 1, nchar(tmp)-4)
-  plantid = c(plantid, id)
-}
-raw$plantid <- plantid
-length(unique(plantid))
+# get field position
+field <- str_extract(seg$filename, "C\\d+_R\\d+")
+table(nchar(field))
+table(is.na(field))
 
-# fix plant ids
-data_blk2[data_blk2$plantid == "e2.1_PI656065_C0", ]$plantid <- "PI656065"
+# field position is na; Keep those as NAs; check field position latter
+unique(seg[is.na(field),]$filename)
+seg[is.na(seg$fieldposition),] -> tmp
 
-# remove duplicates of a plant
-data_blk2_cleaned <- data_blk2
-rmlist <- c("PI329541_C10_R09-1", "PI329541_C10_R09-2", "PI330168_C11_R09-1","PI330168_C11_R09-2",
-            "PI521280_C06_R06-1", "PI569418_C14_R19-1", "PI569418_C14_R19-2")
-data_blk2_cleaned[!data_blk2_cleaned$plantid %in% rmlist,] -> data_blk2_cleaned
+# field positions with 6 characters are turned to NAs
+field[nchar(field) == 6]<- NA
+seg$fieldposition <- field
 
-# get accession name 
-accession <- substr(data_blk2_cleaned$plantid, 1,8)
-accession[accession == "PI92270_"] <- "PI92270"
-accession[accession == "PI19770_"] <- "PI19770"
+# remove replicates of the same plant
+plant <- str_extract(seg$filename, "(?<=/)[^/]+(?=\\.czi)")
+table(nchar(plant))
 
-data_blk2_cleaned$accession <- accession
+# rows with 62 character plant id has zero reps; keep
+unique(plant[nchar(plant) == 62])
+
+# rows with 20 character plant id are "PI641909_C17_R05-4-5" "PI641909_C17_R05-4-6", are duplicates, removed
+unique(plant[nchar(plant) == 20])
+seg[!nchar(plant) == 20, ] -> seg_nodup
+
+plant <- str_extract(seg_nodup$filename, "(?<=/)[^/]+(?=\\.czi)")
+table(nchar(plant))
+
+# rows with 18 character plant id are duplicates; removed
+unique(plant[nchar(plant) == 18])
+seg_nodup[!nchar(plant) == 18, ] -> seg_nodup
+
+plant <- str_extract(seg_nodup$filename, "(?<=/)[^/]+(?=\\.czi)")
+table(nchar(plant))
+
+# rows with 17 character plant id are duplicates; removed
+unique(plant[nchar(plant) == 17])
+seg_nodup[!nchar(plant) == 17, ] -> seg_nodup
+
+plant <- str_extract(seg_nodup$filename, "(?<=/)[^/]+(?=\\.czi)")
+table(nchar(plant))
+
+# rows with 16 character plant id are not duplicates; KEEP
+seg_nodup[seg_nodup$accession == "PI521280",] -> tmp # seg_nodup[plant == "_PI521280_C17_R1",]
+unique(tmp$filename)
+seg_nodup[seg_nodup$accession == "PI656065",] -> tmp # seg_nodup[plant == "e2.1_PI656065_C0",]
+unique(tmp$filename)
+
+# rows with 15 character plant id are not duplicates; KEEP
+unique(plant[nchar(plant) == 15])
+
+##=============================================================================================================
+##              Initial exploration
+##=============================================================================================================
 
 # calculate fungal structure frequency by accession
 data_blk2_cleaned %>% group_by(accession, annotations) %>% summarise(freq = n()) -> table_frq
