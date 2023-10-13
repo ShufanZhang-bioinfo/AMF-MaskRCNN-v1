@@ -1,0 +1,251 @@
+---
+title: "GWAS_2022_inference_result"
+author: "Shufan Zhang"
+date: "2023-10-12"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = FALSE,
+  warning = FALSE,
+  eval = TRUE
+)
+```
+
+
+```{r data input}
+setwd("/Users/lovely_shufan/Dropbox (Edison_Lab@UGA)/AMF/AMF Imaging 2022/0_inference_using_MaskRCNN_2021/2_infer_result/GA_GWAS_2022/")
+
+load("GWAS_2022_inference_data_wrangling_EDA.RData")
+library(ggplot2)
+library(viridis)
+my_theme <- theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="none",
+        panel.grid.major=element_line(color='#eeeeee'))
+```
+
+## Exploratory Data Analysis of Inference Result
+
+### Data cleaning
+The best performing Mask RCNN model from 2021 was applied to ZEISS AxioScan7 images from the three untreated blocks in the Georgia GWAS 2022 experiment. Batch effect between training images and new AxioScan7 images are removed by centering the new images. Inference result was deduplicated. Segmentations with confidence score higher than 80%, size larger than 250 pixels are saved for the downstream analyses.
+
+### Visualize model performance
+
+```{r histograms of confidencescore, echo=FALSE, dpi=300, fig.width=7, fig.height=7, eval=FALSE}
+#confidence score
+library(ggplot2)
+library(viridis)
+
+ggplot(seg_clean_v3, aes(x = area,fill=annotations)) + 
+  geom_histogram(binwidth = 10000) +
+  facet_wrap(~annotations)+
+  scale_fill_viridis_d()+
+  theme_classic()+
+  my_theme +
+  labs(fill="")
+
+ggplot(seg_clean_v3, aes(x=area_mm2,fill=annotations))+
+  geom_histogram(position = 'identity') +
+  scale_fill_viridis(discrete=TRUE) +
+  labs(fill="")+
+  facet_wrap(~annotations)+
+  theme_classic()+
+  my_theme
+
+ggplot(seg_clean_v3, aes(x=log10(area),fill=annotations))+
+  geom_histogram(position = 'identity') +
+  scale_fill_viridis(discrete=TRUE) +
+  labs(fill="")+
+  facet_wrap(~annotations)+
+  theme_classic()+
+  my_theme
+
+ggplot(seg_clean_v3, aes(x=log10(area_mm2),fill=annotations))+
+  geom_histogram(position = 'identity') +
+  scale_fill_viridis(discrete=TRUE) +
+  labs(fill="")+
+  facet_wrap(~annotations)+
+  theme_classic()+
+  my_theme
+
+ggplot(seg_clean_v3, aes(x=confidenceScore,fill=annotations))+
+  geom_histogram(position = 'identity') +
+  scale_fill_viridis(discrete=TRUE) +
+  labs(fill="")+
+  facet_wrap(~annotations)+
+  theme_classic()+
+  my_theme
+
+ggplot(seg_clean_v3, aes(y=confidenceScore, x=log(area), color=annotations))+
+  geom_point() +
+  scale_color_viridis(discrete=TRUE) +
+  labs(fill="")+
+  facet_wrap(~annotations)+
+  #ylim(c(0,25))+
+  theme_classic()+
+  my_theme
+
+```
+
+### Block effect
+```{r exploratory analysis block effect count density, echo=FALSE}
+model1 <- lm(log(countDensity)~accession+block+annotations+annotations*block, data = count_density_blk_anno)
+a <- aov(model1)
+print(summary(a))
+tukey_result <- TukeyHSD(a)
+```
+
+```{r visualize block effect count density, echo=FALSE, dpi=300, fig.width=7, fig.height=7, eval=FALSE}
+#confidence score
+library(ggplot2)
+library(viridis)
+library(dplyr)
+factor(count_density_blk$accession , levels = cd_order) -> count_density_blk$accession
+factor(count_density_blk$block , levels = c("Block2", "Block8", "Block10")) -> count_density_blk$block
+
+factor(count_density_blk_anno$accession , levels = cd_order) -> count_density_blk_anno$accession
+factor(count_density_blk_anno$block , levels = c("Block2", "Block8", "Block10")) -> count_density_blk_anno$block
+
+count_density_blk_anno <- count_density_blk_anno %>%
+  mutate(grouping = (match(accession, cd_order) - 1) %/% 50 + 1)
+count_density_blk <- count_density_blk %>%
+  mutate(grouping = (match(accession, cd_order) - 1) %/% 50 + 1)
+
+ggplot(count_density_blk_anno, aes(x = accession, y = countDensity, color = block)) +
+  geom_point() +
+  labs(fill="")+
+  facet_wrap(vars(grouping,annotations), scales = "free_x", nrow = 7)+
+  scale_color_viridis(discrete=TRUE) +
+  #ylim(c(0,25))+
+  theme_classic()
+
+ggplot(count_density_blk_anno, aes(x = block, y = countDensity)) +
+  geom_boxplot() +
+  labs(fill="")+
+  scale_color_viridis(discrete=TRUE) +
+  #ylim(c(0,25))+
+  theme_classic()
+
+ggplot(count_density_blk_anno, aes(x = block, y = percenCol, fill=annotations)) +
+  geom_boxplot() +
+  labs(fill="")+
+  scale_color_viridis(discrete=TRUE) +
+  #ylim(c(0,25))+
+  theme_classic()
+
+#ggplot(count_density_blk, aes(x = accession, y = countDensity, color = block)) +
+#  geom_point() +
+#  labs(fill="")+
+#  facet_wrap(vars(grouping), scales = "free_x", nrow = 7)+
+#  scale_color_viridis(discrete=TRUE) +
+#  #ylim(c(0,25))+
+#  theme_classic()+
+#  my_theme
+
+```
+
+```{r exploratory analysis block effect percent col, echo=FALSE}
+model2 <- lm(log(percentCol)~accession+block+annotations+annotations*block, data = percent_col_blk_anno)
+a2 <- aov(model2)
+print(summary(a2))
+tukey_result <- TukeyHSD(a2)
+```
+
+```{r visualize block effect percent col, echo=FALSE, dpi=300, fig.width=7, fig.height=7, eval=FALSE}
+#confidence score
+library(ggplot2)
+library(viridis)
+library(dplyr)
+factor(percent_col_blk$accession , levels = pc_order) -> percent_col_blk$accession
+factor(percent_col_blk$block , levels = c("Block2", "Block8", "Block10")) -> percent_col_blk$block
+
+factor(percent_col_blk_anno$accession , levels = cd_order) -> percent_col_blk_anno$accession
+factor(percent_col_blk_anno$block , levels = c("Block2", "Block8", "Block10")) -> percent_col_blk_anno$block
+
+percent_col_blk_anno <- percent_col_blk_anno %>%
+  mutate(grouping = (match(accession, pc_order) - 1) %/% 50 + 1)
+percent_col_blk_anno <- percent_col_blk_anno %>%
+  mutate(grouping = (match(accession, pc_order) - 1) %/% 50 + 1)
+
+ggplot(percent_col_blk_anno, aes(x = accession, y = percentCol, color = block)) +
+  geom_point() +
+  labs(fill="")+
+  facet_wrap(vars(grouping,annotations), scales = "free_x", nrow = 7)+
+  scale_color_viridis(discrete=TRUE) +
+  #ylim(c(0,25))+
+  theme_classic()+
+  my_theme
+
+#ggplot(count_density_blk, aes(x = accession, y = countDensity, color = block)) +
+#  geom_point() +
+#  labs(fill="")+
+#  facet_wrap(vars(grouping), scales = "free_x", nrow = 7)+
+#  scale_color_viridis(discrete=TRUE) +
+#  #ylim(c(0,25))+
+#  theme_classic()+
+#  my_theme
+
+```
+
+
+### Correlation between percent col and count density
+```{r correlation, echo=FALSE, dpi=300, fig.width=7, fig.height=7, eval=FALSE}
+percent_col_blk_anno$key2 <- paste(percent_col_blk_anno$key,percent_col_blk_anno$annotations,sep = "_")
+count_density_blk_anno$key2 <- paste(count_density_blk_anno$key,count_density_blk_anno$annotations,sep = "_")
+merge(count_density_blk_anno, percent_col_blk_anno[,-c(1:6,8)], by = "key2") -> pheno_blk_anno
+
+factor(pheno_blk_anno$accession , levels = pc_order) -> pheno_blk_anno$accession
+factor(pheno_blk_anno$block , levels = c("Block2", "Block8", "Block10")) -> pheno_blk_anno$block
+
+pheno_blk_anno <- pheno_blk_anno %>%
+  mutate(grouping_pc = (match(accession, pc_order) - 1) %/% 50 + 1)
+
+ggplot(pheno_blk_anno, aes(x = countDensity, y = percentCol, color = block)) +
+  geom_point() +
+  labs(fill="")+
+  facet_wrap(vars(grouping,annotations), scales = "free_x", nrow = 7)+
+  scale_color_viridis(discrete=TRUE) +
+  #ylim(c(0,25))+
+  theme_classic()+
+  my_theme
+```
+
+
+## Data visualize
+```{r overall percent colonization boxplots, dpi=300, fig.width=7, fig.height=7, eval=FALSE}
+percent_col_anno$key <- paste(percent_col_anno$accession,percent_col_anno$annotations, sep = "_")
+count_density_anno$key <- paste(count_density_anno$accession,count_density_anno$annotations, sep = "_")
+
+merge(percent_col_anno, count_density_anno[,-c(1:5)], by = "key") -> pheno_anno
+my_theme45 <- theme(text = element_text(size = 16),
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(margin = margin(r = 20), vjust = -0.25),
+        legend.position = "right",legend.title= element_blank())
+
+ggplot(pheno_anno, aes(fill=annotations, y=countDensity, x=factor(accession, levels = pc_order)))+ 
+  geom_bar(stat="identity")+
+  scale_fill_viridis_d()+
+  theme_classic()+
+  my_theme45+
+  xlab("accession orderd in decreading percent colonization")+
+  ylab("count density")
+```
+
+
+
