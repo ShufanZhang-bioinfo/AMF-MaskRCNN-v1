@@ -169,7 +169,6 @@ length(keys_without_root$key) / length(unique(freq_table$key))
 ##=============================================================================================================
 ggplot(seg_clean_v3, aes(x = area,fill=annotations)) + 
   geom_histogram(binwidth = 10000) +
-  labs(title = "Histogram of Area by Annotations")+
   facet_grid(rows = vars(annotations))+
   scale_fill_viridis_d()+
   theme_minimal()
@@ -196,75 +195,108 @@ ggplot(seg_clean_v3, aes(x = area_mm2, y = confidenceScore, color=annotations)) 
   theme_minimal()
 
 ##=============================================================================================================
-##              Data wrangling
+##              Data wrangling: calculate overall colonization
 ##=============================================================================================================
 # calculate fungal structure frequency by accession and block
-seg_clean_v3 %>% group_by(accession, block, annotations) %>% summarise(freq = n()) -> table_frq
-table_frq$key <- paste(table_frq$accession, table_frq$block, sep = "_")
+#seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
+#  group_by(accession, block, annotations) %>% 
+#  summarise(freq = n()) -> fungal_frq
+
+seg_clean_v3[!seg_clean_v3$annotations %in% c("root", "AMF spore", "AMF vesicle"),] %>% 
+  group_by(accession, block, annotations) %>% 
+  summarise(freq = n()) -> fungal_frq
+fungal_frq$key <- paste(fungal_frq$accession, fungal_frq$block, sep = "_")
+spread(fungal_frq, key = "annotations",value = "freq") -> fungal_frq_wide
+fungal_frq_wide[is.na(fungal_frq_wide)] <- 0
+
+# calculate overall fungal frequency by accession and block
+seg_clean_v3[!seg_clean_v3$annotations %in% c("root", "AMF spore", "AMF vesicle"),] %>% group_by(accession, block) %>% summarise(freq = n()) -> fungal_frq_overall
+fungal_frq_overall$key <- paste(fungal_frq_overall$accession, fungal_frq_overall$block, sep = "_")
 
 # calculate total root area per accession and block
 seg_clean_v3[seg_clean_v3$annotations == "root",] %>% group_by(accession,block) %>% summarise(rootArea = sum(area)) -> rootarea
 rootarea$key <- paste(rootarea$accession, rootarea$block, sep = "_")
 rootarea$rootArea_mm2 <- rootarea$rootArea * 0.1202399 *10^-6
 
-# calculate count density by block and annotations
-merge(table_frq, rootarea[,-c(1,2)], by = "key", all.x = TRUE) -> count_density_blk_anno
-count_density_blk_anno[!count_density_blk_anno$annotations == "root",] -> count_density_blk_anno
-count_density_blk_anno$countDensity <- count_density_blk_anno$freq / count_density_blk_anno$rootArea_mm2
+# calculate overall count density by accession and block
+merge(fungal_frq_overall, rootarea[,-c(1:3)], by = "key", all.x = TRUE) -> overall_count_density_blk
+overall_count_density_blk$countDensity <- overall_count_density_blk$freq / overall_count_density_blk$rootArea_mm2
+merge(overall_count_density_blk, fungal_frq_wide[,-c(1,2)], by="key",all.x = TRUE) -> overall_count_density_blk 
+#colnames(overall_count_density_blk) <- c("key","accession","block",             
+#                                       "fungalCount","rootArea","rootArea_mm2",      
+#                                       "countDensity","ves_count","sp_count",         
+#                                       "inH_count", "exH_count", "arb_count")
+
+colnames(overall_count_density_blk) <- c("key","accession","block",             
+                                         "fungalCount","rootArea_mm2",      
+                                         "countDensity",        
+                                         "inH_count", "exH_count", "arb_count")
+#===================================================================
+# calculate fungal size by accession and block
+
+#seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
+#  group_by(accession, block, annotations) %>% 
+#  summarise(fungalArea = sum(area_mm2)) -> fungal_area
+
+seg_clean_v3[!seg_clean_v3$annotations %in% c("root", "AMF spore", "AMF vesicle"),] %>% 
+  group_by(accession, block, annotations) %>% 
+  summarise(fungalArea = sum(area_mm2)) -> fungal_area
+fungal_area$key <- paste(fungal_area$accession, fungal_area$block, sep = "_")
+spread(fungal_area, key = "annotations",value = "fungalArea") -> fungal_area_wide
+fungal_area_wide[is.na(fungal_area_wide)] <- 0
+
+# calculate overall fungal area by accession and block
+#seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
+#  group_by(accession, block) %>% 
+#  summarise(fungalArea = sum(area_mm2)) -> fungal_area_overall
+
+seg_clean_v3[!seg_clean_v3$annotations %in% c("root", "AMF spore", "AMF vesicle"),] %>% 
+  group_by(accession, block) %>% 
+  summarise(fungalArea = sum(area_mm2)) -> fungal_area_overall
+fungal_area_overall$key <- paste(fungal_area_overall$accession, fungal_area_overall$block, sep = "_")
+
+# calculate overall percent colonization by accession and block
+merge(fungal_area_overall, rootarea[,-c(1:3)], by = "key", all.x = TRUE) -> overall_percent_col_blk
+overall_percent_col_blk$percentCol <- overall_percent_col_blk$fungalArea / overall_percent_col_blk$rootArea_mm2
+merge(overall_percent_col_blk, fungal_area_wide[,-c(1,2)], by="key",all.x = TRUE) -> overall_percent_col_blk 
+#colnames(overall_percent_col_blk) <- c("key","accession","block",             
+#                                       "fungalArea","rootArea","rootArea_mm2",      
+#                                       "percentCol","ves_area_mm2","sp_area_mm2",         
+#                                       "inH_area_mm2", "exH_area_mm2", "arb_area_mm2")
+
+colnames(overall_percent_col_blk) <- c("key","accession","block",             
+                                       "fungalArea","rootArea_mm2",      
+                                       "percentCol",        
+                                       "inH_area_mm2", "exH_area_mm2", "arb_area_mm2")
 
 #===================================================================
-# calculate fungal frequency by accession and block
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% group_by(accession, block) %>% summarise(fungalFreq = n()) -> table_frq
-table_frq$key <- paste(table_frq$accession, table_frq$block, sep = "_")
+# all phenotypes in one dataframe
+merge(overall_percent_col_blk, overall_count_density_blk[,-c(2,3,5)], by = "key") -> pheno
 
-# calculate count density by block and annotations
-merge(table_frq, rootarea[,-c(1,2)], by = "key", all.x = TRUE) -> count_density_blk
-count_density_blk$countDensity <- count_density_blk$fungalFreq / count_density_blk$rootArea_mm2
+##=============================================================================================================
+##              Data wrangling: calculate class-level colonization
+##=============================================================================================================
 
-#===================================================================
+# calculate class level count density
+merge(fungal_frq, rootarea[,-c(1:3)], by = "key", all.x = TRUE) -> cd_blk_anno
+cd_blk_anno$countDensity <- cd_blk_anno$freq / cd_blk_anno$rootArea_mm2
+cd_blk_anno$tf_countDensity <- cd_blk_anno$countDensity^0.2
 
-# calculate fungal structure percent colonization by accession and block
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
-  group_by(block, accession, annotations) %>% 
-  summarise(FungalArea_mm2 = sum(area_mm2)) -> fungalarea
-fungalarea$key <- paste(fungalarea$accession, fungalarea$block, sep = "_")
+# calculate class level percent colonization
+merge(fungal_area, rootarea[,-c(1:3)], by = "key", all.x = TRUE) -> pc_blk_anno
+pc_blk_anno$percentCol <- pc_blk_anno$fungalArea / pc_blk_anno$rootArea_mm2
+pc_blk_anno$tf_percentCol <- pc_blk_anno$percentCol^0.2
 
-merge(fungalarea, rootarea[,-c(1:3)], by = "key", all.x = TRUE) -> percent_col_blk_anno
-percent_col_blk_anno$percentCol <- percent_col_blk_anno$FungalArea_mm2 / percent_col_blk_anno$rootArea_mm2
+##=============================================================================================================
+##              Data wrangling: total colonization by accession
+##=============================================================================================================
+# total percent colonization
 
-# calculate fungal percent colonization by accession and block
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
-  group_by(block, accession) %>% 
-  summarise(FungalArea_mm2 = sum(area_mm2)) -> fungalarea
-fungalarea$key <- paste(fungalarea$accession, fungalarea$block, sep = "_")
+#seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
+#  group_by(accession) %>% 
+#  summarise(sumFungalArea = sum(area_mm2)) -> totalfungalarea
 
-merge(fungalarea, rootarea[,-c(1:3)], by = "key", all.x = TRUE) -> percent_col_blk
-percent_col_blk$percentCol <- percent_col_blk$FungalArea_mm2 / percent_col_blk$rootArea_mm2
-
-#===================================================================
-# calculate fungal structure percent colonization by accession 
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
-  group_by(accession, annotations) %>% 
-  summarise(FungalArea_mm2 = sum(area_mm2)) -> fungalarea
-
-# calculate root area per accession
-seg_clean_v3[seg_clean_v3$annotations == "root",] %>% group_by(accession) %>% summarise(rootArea = sum(area)) -> rootarea
-rootarea$rootArea_mm2 <- rootarea$rootArea * 0.1202399 *10^-6
-
-merge(fungalarea, rootarea, by = "accession", all.x = TRUE) -> percent_col_anno
-percent_col_anno$percentCol <- percent_col_anno$FungalArea_mm2 / percent_col_anno$rootArea_mm2
-
-# calculate fungal count density by accession 
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
-  group_by(accession, annotations) %>% 
-  summarise(freq = n())-> fungalcount
-
-merge(fungalcount, rootarea, by = "accession", all.x = TRUE) -> count_density_anno
-count_density_anno$countDensity <- count_density_anno$freq / count_density_anno$rootArea_mm2
-
-#===================================================================
-
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
+seg_clean_v3[!seg_clean_v3$annotations %in% c("AMF spore", "AMF vesicle", "root"),] %>% 
   group_by(accession) %>% 
   summarise(sumFungalArea = sum(area_mm2)) -> totalfungalarea
 
@@ -275,18 +307,81 @@ seg_clean_v3[seg_clean_v3$annotations == "root",] %>%
 merge(totalfungalarea, totalrootarea, by = "accession", all.x = TRUE) -> total_pc
 total_pc$percentCol <- total_pc$sumFungalArea / total_pc$sumRootArea
 
-# order accessions by percent colonization
-total_pc[order(total_pc$percentCol, decreasing = TRUE),] -> total_pc
-pc_order <- total_pc$accession
+# total count density
+#seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% 
+#  group_by(accession) %>% 
+#  summarise(sumFungalCount = n()) -> totalfungalcount
 
-# order accessions by count density
-seg_clean_v3[!seg_clean_v3$annotations == "root",] %>% group_by(accession) %>% summarise(sumFungalCount = n()) -> totalfungalcount
+seg_clean_v3[!seg_clean_v3$annotations %in% c("AMF spore", "AMF vesicle", "root"),] %>% 
+  group_by(accession) %>% 
+  summarise(sumFungalCount = n()) -> totalfungalcount
 
 merge(totalfungalcount, totalrootarea, by = "accession", all.x = TRUE) -> total_cd
 total_cd$countDensity <- total_cd$sumFungalCount / total_cd$sumRootArea
 
+
+##=============================================================================================================
+##              Order accessions
+##=============================================================================================================
+
+# order accessions by percent colonization
+total_pc[order(total_pc$percentCol, decreasing = TRUE),] -> total_pc
+order_pc <- total_pc$accession
+
+# order accessions by count density
 total_cd[order(total_cd$countDensity, decreasing = TRUE),] -> total_cd
-cd_order <- total_cd$accession
+order_cd <- total_cd$accession
+
+# for each block, order accession by percent colonization
+pc_blk_anno %>% 
+  group_by(accession, block) %>% 
+  summarise(overallPercentCol = sum(percentCol)) -> pc_blk
+
+pc_blk[pc_blk$block == "Block2",] -> tmp
+tmp$trans_percentCol <- tmp$overallPercentCol^0.2
+tmp[order(tmp$overallPercentCol,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_pc_blk2
+
+overall_percent_col_blk[overall_percent_col_blk$block == "Block2",] -> tmp 
+tmp[order(tmp$percentCol,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_pc_blk2
+
+overall_percent_col_blk[overall_percent_col_blk$block == "Block8",] -> tmp 
+tmp[order(tmp$percentCol,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_pc_blk8
+
+overall_percent_col_blk[overall_percent_col_blk$block == "Block10",] -> tmp 
+tmp[order(tmp$percentCol,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_pc_blk10
+
+cd_blk_anno %>% 
+  group_by(accession, block) %>% 
+  summarise(overallCountDensity = sum(countDensity)) -> cd_blk
+
+cd_blk[cd_blk$block == "Block2",] -> tmp 
+tmp[order(tmp$overallCountDensity,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_cd_blk2
+
+pheno[pheno$block == "Block2",] -> tmp 
+tmp[order(tmp$countDensity,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_cd_blk2
+
+pheno[pheno$block == "Block8",] -> tmp 
+tmp[order(tmp$countDensity,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_cd_blk8
+
+pheno[pheno$block == "Block10",] -> tmp 
+tmp[order(tmp$countDensity,decreasing = TRUE), ] -> tmp  
+tmp$accession -> order_cd_blk10
+##=============================================================================================================
+##              Order Blocks
+##=============================================================================================================
+factor(seg_clean_v3$block, levels = c("Block2", "Block8", "Block10")) -> seg_clean_v3$block
+factor(pheno$block, levels = c("Block2", "Block8", "Block10")) -> pheno$block
+factor(cd_blk_anno$block, levels = c("Block2", "Block8", "Block10")) -> cd_blk_anno$block
+factor(pc_blk_anno$block, levels = c("Block2", "Block8", "Block10")) -> pc_blk_anno$block
+factor(overall_count_density_blk$block, levels = c("Block2", "Block8", "Block10")) -> overall_count_density_blk$block
+factor(overall_percent_col_blk$block, levels = c("Block2", "Block8", "Block10")) -> overall_percent_col_blk$block
 
 # visualization
 library(ggplot2)
@@ -318,7 +413,4 @@ ggplot(total2, aes(fill=phenotype, y=value, x=accession)) +
 
 save.image(file = "GWAS_2022_inference_data_wrangling_EDA.RData")
 
-# block effect
-model1 <- lm(log(countDensity)~accession+block+annotations+annotations*block, data = count_density_blk_anno)
-a <- aov(model1)
-tukey_result <- TukeyHSD(a)
+
