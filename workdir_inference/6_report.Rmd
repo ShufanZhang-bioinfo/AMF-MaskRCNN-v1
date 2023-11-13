@@ -15,23 +15,25 @@ knitr::opts_chunk$set(
   comment = "#>",
   echo = FALSE,
   warning = FALSE,
-  eval = TRUE
+  eval = TRUE,
+  warning = FALSE, message = FALSE
 )
 ```
 
 
-```{r data input}
+```{r data input, include=FALSE}
 setwd("/Users/lovely_shufan/Dropbox (Edison_Lab@UGA)/AMF/AMF Imaging 2022/0_inference_using_MaskRCNN_2021/2_infer_result/GA_GWAS_2022/")
-
+getwd()
+dir()
 load("GWAS_2022_inference_data_wrangling_EDA.RData")
 library(ggplot2)
 library(viridis)
-my_theme <- theme(text=element_text(size=16),
+my_theme <- theme(text=element_text(size=10),
         plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
-        axis.text.x = element_text(size = 16),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_text(size = 16),
-        axis.title.y = element_text(size = 16),
+        axis.text.x = element_text(size = 6),
+        axis.text.y = element_text(size = 6),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
         axis.ticks=element_blank(),
         axis.line=element_blank(),
         panel.border=element_blank(),
@@ -44,58 +46,35 @@ my_theme <- theme(text=element_text(size=16),
 ### Data cleaning
 The best performing Mask RCNN model from 2021 was applied to ZEISS AxioScan7 images from the three untreated blocks in the Georgia GWAS 2022 experiment. Batch effect between training images and new AxioScan7 images are removed by centering the new images. Inference result was deduplicated. Segmentations with confidence score higher than 80%, size larger than 250 pixels are saved for the downstream analyses.
 
+The image resolution of AxioScan 7 microscope is 0.120 micron^2/pixel. Segmentation areas were converted to mm^2.  
+
 ### Visualize model performance
 
-```{r histograms of confidencescore, echo=FALSE, dpi=300, fig.width=7, fig.height=7, eval=FALSE}
+```{r histograms of confidencescore, echo=FALSE, fig.retina = 1.5, fig.height=6, fig.width=9, fig.align = "center"}
 #confidence score
 library(ggplot2)
 library(viridis)
-
-ggplot(seg_clean_v3, aes(x = area,fill=annotations)) + 
-  geom_histogram(binwidth = 10000) +
-  facet_wrap(~annotations)+
-  scale_fill_viridis_d()+
-  theme_classic()+
-  my_theme +
-  labs(fill="")
-
-ggplot(seg_clean_v3, aes(x=area_mm2,fill=annotations))+
-  geom_histogram(position = 'identity') +
+ggplot(seg_clean_v3, aes(x=confidenceScore,fill=annotations))+
+  geom_histogram(position = 'identity',binwidth = 0.005) +
   scale_fill_viridis(discrete=TRUE) +
   labs(fill="")+
-  facet_wrap(~annotations)+
-  theme_classic()+
-  my_theme
-
-ggplot(seg_clean_v3, aes(x=log10(area),fill=annotations))+
-  geom_histogram(position = 'identity') +
-  scale_fill_viridis(discrete=TRUE) +
-  labs(fill="")+
-  facet_wrap(~annotations)+
-  theme_classic()+
-  my_theme
-
-ggplot(seg_clean_v3, aes(x=log10(area_mm2),fill=annotations))+
-  geom_histogram(position = 'identity') +
-  scale_fill_viridis(discrete=TRUE) +
-  labs(fill="")+
-  facet_wrap(~annotations)+
+  facet_grid(rows = vars(annotations), scales = "free_y")+
   theme_classic()+
   my_theme
 
 ggplot(seg_clean_v3, aes(x=confidenceScore,fill=annotations))+
-  geom_histogram(position = 'identity') +
+  geom_histogram(position = 'identity',binwidth = 0.005) +
   scale_fill_viridis(discrete=TRUE) +
   labs(fill="")+
-  facet_wrap(~annotations)+
+  facet_grid(rows = vars(annotations), cols = vars(block), scales = "free_y")+
   theme_classic()+
   my_theme
 
-ggplot(seg_clean_v3, aes(y=confidenceScore, x=log(area), color=annotations))+
+ggplot(seg_clean_v3, aes(y=confidenceScore, x=log(area_mm2), color=annotations))+
   geom_point() +
   scale_color_viridis(discrete=TRUE) +
   labs(fill="")+
-  facet_wrap(~annotations)+
+  facet_grid(rows = vars(annotations))+
   #ylim(c(0,25))+
   theme_classic()+
   my_theme
@@ -104,6 +83,13 @@ ggplot(seg_clean_v3, aes(y=confidenceScore, x=log(area), color=annotations))+
 
 ### Block effect
 ```{r exploratory analysis block effect count density, echo=FALSE}
+spread(count_density_anno[,-c(4,5)], key = "annotations", value= countDensity, -)
+
+pc.rin.arbc.rg <- lmer(percent_colonization^(1/3) ~ arb_count_scaled + region + (1|accession), data = col.overall.class.predictors.scaled, REML = TRUE)
+
+cd_empty <- lmer(count_density^0.2 ~ arb_count_scaled + exH_count_scaled +
+                      sp_count_scaled + ves_count_scaled + (1|accession), data = col.overall.class.predictors.scaled)
+
 model1 <- lm(log(countDensity)~accession+block+annotations+annotations*block, data = count_density_blk_anno)
 a <- aov(model1)
 print(summary(a))
