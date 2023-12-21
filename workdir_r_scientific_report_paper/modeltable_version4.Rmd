@@ -1,0 +1,494 @@
+---
+title: "AMF_imaging_analysis_report v2"
+author: "Shufan Zhang"
+date: "2023-02-10"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \usepackage{multirow}
+  - \usepackage{wrapfig}
+  - \usepackage{float}
+  - \usepackage{colortbl}
+  - \usepackage{pdflscape}
+  - \usepackage{tabu}
+  - \usepackage{threeparttable}
+  - \usepackage{threeparttablex}
+  - \usepackage[normalem]{ulem}
+  - \usepackage{makecell}
+  - \usepackage{xcolor}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = FALSE,
+  warning = FALSE,
+  eval = TRUE
+)
+
+library(emmeans) 
+library(GGally)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+library(lattice)
+library(dplyr)
+library(lme4)
+library(lmerTest)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(performance) # for icc
+library(glmmLasso)
+library(MuMIn) # for mixed linear model r squared value
+library(pbkrtest)
+library(kableExtra)
+options(knitr.table.format = "latex")
+
+load("workspace_modeltable.rds")
+
+my_theme <- theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="none",
+        panel.grid.major=element_line(color='#eeeeee'))
+
+
+```
+
+# Section 1.1: Fit AMF percent colonization with Mixed Linear Models (MLMs)
+Lasso regression suggested that arbuscule size is the most significant predictor for AMF percent colonization out of all AMF structure level predictors. Region is a design variable of interest. We fitted random intercept models and random intercept + slope models of arbuscule count and the region design variable to find the best performing model. 
+```{r table one, echo=FALSE}
+kbl(modeltable3, booktabs = T, caption = "Mixed effect models using region, arbscule count and size as fixed effects", digits = c(4,4,4,4,4,4,4), full_width = F, escape = FALSE) %>% 
+  add_header_above(c(" ", "Model 1" = 1, "Model 2" = 1, "Model 3" = 1, "Model 4" = 1, "Model 5" = 1, "Model 6"=1)) %>% 
+  add_header_above(c(" ", "Random intercept" = 5, "Random intercept \n + slope" =1)) %>% 
+  pack_rows("Fixed effects", 1, 5) %>%
+  pack_rows("Random effects", 7, 8) %>% 
+  pack_rows("Proportional change in variance (PCV)", 9, 10) %>% 
+  pack_rows("Intraclass correlation (ICC) or Variance Partition Coefficient (VPC)",11,11) %>% 
+  pack_rows("Model performance",12, 16)
+
+```
+
+
+```{r model selection overall percent colonization random intercept, eval=FALSE}
+# test fix effect significance
+# methods: Wald test, Likelihood ratio test, F-test and degrees of freedom based on Kenward-Roger approximation, paramatric bootstrap
+anova(pc.empty, pc.rin.rg, test = "Chisq") 
+anova(pc.empty, pc.rin.rg, test = "LRT") # AIC, BIC, deviance 
+KRmodcomp(pc.rin.rg, pc.empty)
+confint(pc.rin.rg)
+bstr1 <- PBmodcomp(pc.rin.rg,pc.empty,nsim=1000,seed=31221743) #PBmodcomp(largeModel,smallModel,nsim)
+summary(bstr1)
+
+
+anova(pc.rin.rg, pc.rin.arbs.rg, test = "Chisq") 
+anova(pc.rin.rg, pc.rin.arbs.rg, test = "LRT") 
+KRmodcomp(pc.rin.arbs.rg, pc.rin.rg)
+confint(pc.rin.arbs.rg)
+bstr2 <- PBmodcomp(pc.rin.arbs.rg,pc.rin.rg,nsim=1000,seed=31221743)
+summary(bstr2)
+
+anova(pc.rin.arbs.rg, pc.rin.arbcs.rg, test = "Chisq") 
+anova(pc.rin.arbs.rg, pc.rin.arbcs.rg, test = "LRT") 
+KRmodcomp(pc.rin.arbcs.rg, pc.rin.arbs.rg)
+confint(pc.rin.arbcs.rg)
+bstr3 <- PBmodcomp(pc.rin.arbcs.rg,pc.rin.arbs.rg,nsim=1000,seed=31221743)
+summary(bstr3)
+
+anova(pc.rin.arbcs.rg, pc.rin.arbcs.rg.slope.arbc, test = "Chisq") 
+anova(pc.rin.arbcs.rg, pc.rin.arbcs.rg.slope.arbc, test = "LRT") 
+#KRmodcomp(pc.rin.arbcs.rg.slope.arbc, pc.rin.arbcs.rg)
+confint(pc.rin.arbcs.rg.slope.arbc)
+bstr4 <- PBmodcomp(pc.rin.arbcs.rg.slope.arbc,pc.rin.arbcs.rg,nsim=1000,seed=31221743)
+summary(bstr4)
+
+```
+# Section 1.2: Model Diagnostics
+## Random intercept model with three fixed effects
+```{r model diagnostics percent colonization random intercept, dpi = 110}
+plot(pc.rin.arbcs.rg, type = c("p", "smooth"))
+qqmath(pc.rin.arbcs.rg, id = 0.05)
+```
+
+## Random intercept and slope model with three fixed effects
+```{r model diagnostics percent colonization random intercept and slope, dpi = 110}
+plot(pc.rin.arbcs.rg.slope.arbc, type = c("p", "smooth"))
+qqmath(pc.rin.arbcs.rg.slope.arbc, id = 0.05)
+```
+
+# Section 1.3: Visualize estimated model
+## Random intercept model with three fixed effects
+```{r model visulization random intercept, fig.retina = 1.5, fig.height=6, fig.width=9, fig.align = "center"}
+# plot fitted line against data points
+ggplot(data = pc.long, aes(x = predictor.value, y = percent_colonization^(1/3), group = predictor.type, shape = factor(region, levels = c("TOP","MID","BOT")), color = predictor.type))+
+    geom_point()+
+    geom_abline(data = coef.pc.rin.arbcs.rg.long, mapping=aes(slope=slope, intercept=intercept, linetype = int.type, color = slope.type ))+
+    facet_wrap(~accession)+
+    theme_classic()+
+  ggtitle("random intercept model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+
+ggplot(data = pc, aes(x = arb_count_scaled, y = percent_colonization^(1/3), color = accession))+
+  geom_point()+
+  geom_abline(data = coef.pc.rin.arbcs.rg.long[coef.pc.rin.arbcs.rg.long$slope.type == "arb_count_scaled" &coef.pc.rin.arbcs.rg.long$int.type=="Intercept",], mapping=aes(slope=slope, intercept=intercept, color = accession))+
+  #facet_wrap(~accession)+
+  theme_classic()+
+  ggtitle("random intercept model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+```
+
+## Random intercept and slope model with three fixed effects
+
+```{r model visulization random slope, fig.retina = 1.5,fig.height=6, fig.width=9, fig.align = "center"}
+ggplot(data = pc.long, aes(x = predictor.value, y = percent_colonization^(1/3), group = predictor.type, shape = factor(region, levels = c("TOP","MID","BOT")), color = predictor.type))+
+  geom_point()+
+  geom_abline(data = coef.pc.rin.arbcs.rg.slope.arbc.long, mapping=aes(slope=slope, intercept=intercept, linetype = int.type, color = slope.type))+
+  facet_wrap(~accession)+
+  theme_classic()+
+  ggtitle("random intercept model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+
+ggplot(data = pc, aes(x = arb_count_scaled, y = percent_colonization^(1/3), color = accession))+
+  geom_point()+
+  geom_abline(data = coef.pc.rin.arbcs.rg.slope.arbc.long[coef.pc.rin.arbcs.rg.slope.arbc.long$slope.type == "arb_count_scaled" &coef.pc.rin.arbcs.rg.slope.arbc.long$int.type=="Intercept",], mapping=aes(slope=slope, intercept=intercept, color = accession))+
+  #facet_wrap(~accession)+
+  theme_classic()+
+  ggtitle("random intercept model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+
+v.pc.slope <- as.data.frame(VarCorr(pc.rin.arbcs.rg.slope.arbc))
+range.pc.slope <- range(model.matrix(pc.rin.arbcs.rg.slope.arbc)[,2])
+x.arbc <- seq(range.pc.slope[1], range.pc.slope[2]+0.1, 0.1)
+var.accession <- v.pc.slope$vcov[1] + v.pc.slope$vcov[2]*(x.arbc^2) + 2*v.pc.slope$vcov[3]*x.arbc
+var.pc <- data.frame(x.arbc, var.accession)
+
+ggplot(var.pc, aes(x = x.arbc, y = var.accession))+
+  geom_smooth(stat = "smooth")+
+  theme_classic()+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))  
+
+```
+
+# Section 1.4: Interpret model estimates
+The variation that is associated with the random effect "accession" after arbuscule count is added as fixed effect. The effect of accession is confounded with the variation that is due to abuscule count and size as shown in the figure below. 
+
+The ICC and VPC of accessions is high and expected to drop when between plant variation come into play in a large field/greenhouse experiment. 
+```{r correlation of arb count and arb size, fig.retina = 1.5,fig.height=6, fig.width=9, fig.align = "center", eval=FALSE}
+ggplot(data = col.overall.class.predictors.scaled, aes(x = arb_count_scaled, y = percent_colonization^(1/3), group = accession, color = region))+
+  geom_point()+
+  geom_smooth(method = "lm", se = TRUE,color = "light grey", fill = "light grey")+
+  facet_wrap(~accession)+
+  theme_classic()+
+  ggtitle("arb count and size are highly correlated")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        panel.grid.major=element_line(color='#eeeeee'))
+
+```
+
+
+
+```{r model interpretation, eval=FALSE}
+r.squaredGLMM(lm1)
+r.squaredGLMM(lm2) # amount change in r-squared is little, indicating the interaction between region and arb count being insignificant
+r.squaredGLMM(lm3)
+
+performance::icc(lm1) #icc measures the sample clustering within accession/plant
+#the proportion of the variance in pc explained by the grouping structure in the population
+#how samples from the same accession resemble each other 
+# ICC is the proportion of explained variance that can be attributed to the random effects
+# ICC is calculated by dividing the random effect variance, σ2i, by the total variance, i.e. the sum of the random effect variance and the residual variance, σ2ε.
+# the adjusted ICC is of interest when the analysis of random effects is of interest.
+# 32.1% of the total sample differences in pc are at the accession level
+
+performance::icc(lm3)
+# 84.9% of the total sample differences in pc are at the accession level
+
+lm1.empty <- lmer(percent_colonization ~ (1|accession), data = col.overall.arb.predictor, REML = TRUE)
+lm1.sub1 <- lmer(percent_colonization ~ arb_count_scaled + (1|accession), data = col.overall.arb.predictor, REML = TRUE)
+
+lm3.empty <- lmer(percent_colonization^(1/3) ~ arb_count_scaled + (arb_count_scaled|accession), data = col.overall.arb.predictor, REML = TRUE)
+lm1.var <- VarCorr(lm1)$accession[1]
+lm1.empty.var <- VarCorr(lm1.empty)$accession[1]
+lm1.sub1.var <- VarCorr(lm1.sub1)$accession[1]
+lm1.pcv <- (lm1.empty.var - lm1.var)/lm1.empty.var
+# 90.8% of the sample pc variance in the empty model was attributable to the two fixed effects
+
+lm1.pcv.sub1 <- (lm1.empty.var - lm1.sub1.var)/lm1.empty.var
+# 92.8% of the sample pc variance in the empty model was attributable to the arb_count
+
+lm1.pcv.sub2 <- (lm1.sub1.var - lm1.var)/lm1.sub1.var
+# variance of pc at sample level has increased after adding region as fixed effect
+# variance of pc at accession level has decreased after adding region as fixed effect
+
+
+```
+
+
+# Section 2.1: Fit AMF count density with Mixed Linear Models (MLMs)
+Lasso regression of MLMs suggested that the number of arbuscule, vesicle, spore, intradical and extradical hyphae are significant predictors of overall AMF count density in roots. Backward selection indicates intradical hyphae to be insificant. Region is a design variable of interest. We fitted random intercept models and random intercept + slope models of the five fixed variables to find the best performing models. 
+```{r table two, echo=FALSE}
+kbl(modeltable.cd3, booktabs = T, caption = "Mixed effect models", digits = c(3,3,3,3), full_width = F, escape = FALSE) %>% 
+  add_header_above(c("", "Model 1" = 1, "Model 2" = 1, "Model 3" = 1, "Model 4" = 1)) %>% 
+  add_header_above(c(" ", "Random intercept" = 3, "Random intercept \n + slope" =1)) %>% 
+  pack_rows("Fixed effects x10^9", 1, 7) %>%
+  pack_rows("Random effects x10^9", 9, 10) %>% 
+  pack_rows("Proportional change in variance (PCV)", 11,12) %>% 
+  pack_rows("Intraclass correlation (ICC) or Variance Partition Coefficient (VPC)", 13,13) %>% 
+  pack_rows("Model performance", 14,18)
+
+
+```
+
+# Section 2.2: Model Diagnostics
+## Random intercept model with five fixed effects
+```{r model diagnostics count density random intercept, dpi = 110}
+plot(cd.rin.5fix, type = c("p", "smooth"))
+qqmath(cd.rin.5fix, id = 0.05)
+```
+
+## Random intercept and slope model with five fixed effects
+```{r model diagnostics cd random intercept and slope, dpi = 110}
+plot(cd.slope.exh, type = c("p", "smooth"))
+qqmath(cd.slope.exh, id = 0.05)
+```
+
+# Section 2.3: Visualize estimated models
+## Random intercept model with five fixed effects
+```{r model visulization cd random intercept, fig.retina = 1.5, fig.height=6, fig.width=9, fig.align = "center"}
+# plot fitted line against data points
+ggplot(data = cd.long, aes(x = predictor.value, y = count_density^(1/2), group = predictor.type, shape = factor(region, levels = c("TOP","MID","BOT")), color = predictor.type))+
+    geom_point()+
+    geom_abline(data = coef.cd.rin.5fix.long, mapping=aes(slope=slope, intercept=intercept, linetype = int.type, color = slope.type ))+
+    facet_wrap(~accession)+
+    theme_classic()+
+    scale_color_viridis_d()+
+  ggtitle("random intercept model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+  
+
+ggplot(data = cd, aes(x = exH_count_scaled, y = count_density^(1/2), color = accession))+
+  geom_point()+
+  geom_abline(data = coef.cd.rin.5fix.long[coef.cd.rin.5fix.long$slope.type == "exH_count_scaled" &coef.cd.rin.5fix.long$int.type=="Intercept",], mapping=aes(slope=slope, intercept=intercept, color = accession))+
+  #facet_wrap(~accession)+
+  theme_classic()+
+  ggtitle("random intercept model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+```
+
+## Random intercept and slope model with three fixed effects
+
+```{r model visulization cd random slope, fig.retina = 1.5,fig.height=6, fig.width=9, fig.align = "center"}
+ggplot(data = cd.long, aes(x = predictor.value, y = count_density^(1/2), group = predictor.type, shape = factor(region, levels = c("TOP","MID","BOT")), color = predictor.type))+
+  geom_point()+
+  geom_abline(data = coef.cd.slope.exh.long, mapping=aes(slope=slope, intercept=intercept, linetype = int.type, color = slope.type))+
+  facet_wrap(~accession)+
+  theme_classic()+
+  scale_color_viridis_d()+
+  ggtitle("random slope model fitted to each accession")+
+  theme(text=element_text(size=16),
+        plot.title = element_text(face = "bold",size = rel(1.2), hjust = 0.5),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.ticks=element_blank(),
+        axis.line=element_blank(),
+        panel.border=element_blank(),
+        legend.position="right",
+        legend.title = element_blank(),
+        panel.grid.major=element_line(color='#eeeeee'))
+  
+```
+
+# Section 2.4: Model interpretation 
+```{r cd model interpreration, fig.retina = 1.5, fig.height=6, fig.width=9, fig.align = "center"}
+ggplot(col.class.count3.sub, aes(fill=class2, y=count_density^0.5, x=factor(accession, levels = accession_order_pc))) + 
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_viridis_d()+
+  theme_classic()+
+  #facet_grid(~region)+
+  theme(text = element_text(size = 16),
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = -45, hjust = 0.25, vjust = 1.25),
+        axis.title.y = element_text(margin = margin(r = 20), vjust = -0.25),
+        legend.position = "right",
+        legend.title = element_blank())+
+  xlab("")+
+  ylab("class count density ^ 1/2")
+
+ggplot(col.class.count2.sub, aes(fill=class2, y=count_density^(1/2), x=factor(accession, levels = accession_order_pc))) + 
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_viridis_d()+
+  theme_classic()+
+  facet_grid(~factor(region, levels = c("TOP", "MID", "BOT")))+
+  theme(text = element_text(size = 16),
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = -45, hjust = 0.25, vjust = 1.25),
+        axis.title.y = element_text(margin = margin(r = 20), vjust = -0.25),
+        legend.position = "right",
+        legend.title = element_blank())+
+  xlab("")+
+  ylab("class count density ^ 1/2")
+```
+
+# Section 3 Structure and functionality
+
+```{r table four, echo=FALSE}
+
+signif3 <- function(x) {
+  as.character(sprintf("%.3f",round(x,3)))
+}
+modeltable.class.count.traits %>%
+  mutate_if(is.numeric, signif3) -> modeltable.class.count.traits2
+modeltable.class.count.traits2[modeltable.class.count.traits2== "0.000"] <- "<0.0001"
+
+modeltable.class.size.traits %>%
+  mutate_if(is.numeric, signif3) -> modeltable.class.size.traits2
+modeltable.class.size.traits2[modeltable.class.size.traits2== "0.000"] <- "<0.0001"
+
+colnames(modeltable.class.count.traits2) <- c("","estimate","p value","estimate","p value","estimate","p value","estimate","p value","estimate","p value")
+colnames(modeltable.class.size.traits2) <- c("","estimate","p value","estimate","p value","estimate","p value","estimate","p value","estimate","p value")
+
+kbl(modeltable.class.count.traits2, booktabs = T, caption = "Structure count", full_width = F, escape = FALSE) %>% 
+  add_header_above(c("", "arb" = 2, "exH" = 2, "inH" = 2, "sp" = 2, "ves" =2))
+
+kbl(modeltable.class.size.traits2, booktabs = T, caption = "Structure size", full_width = F, escape = FALSE) %>% 
+  add_header_above(c("", "arb" = 2, "exH" = 2, "inH" = 2, "sp" = 2, "ves" =2))
+
+
+```
+
+# Section 4 Proportion nutrient exchange structures
+
+```{r table five, echo=FALSE}
+signif3 <- function(x) {
+  as.character(sprintf("%.3f",round(x,3)))
+}
+for (i in 2:7){
+  if (i == 4){
+    modeltable.region[,i] <- as.character(sprintf("%.6f",round(modeltable.region[,i],6)))
+  } else{
+    modeltable.region[,i] <- as.character(sprintf("%.3f",round(modeltable.region[,i],3)))
+  }
+}
+
+modeltable.region[modeltable.region== "0.000"] <- "<0.0001"
+
+colnames(modeltable.region) <- c("","estimate","p value","estimate","p value","estimate","p value")
+
+kbl(modeltable.region, booktabs = T, caption = "Multiple comparison tests of AMF colonization along root regions", full_width = F, escape = FALSE) %>% 
+  add_header_above(c("", "percent colonization" = 2, "count density" = 2, "proportion nutrient exchange" = 2))
+
+
+```
+
+```{r correlation amf colonization, fig.retina = 1.5, fig.height=6, fig.width=7, fig.align = "center"}
+ggpairs(col.overall.class.predictors, columns = 18:20, 
+        upper = list(continuous = wrap("cor", method = "pearson")),
+        columnLabels = c("Percent colonization", "Count density", "Proportion NE"))+
+  theme(axis.text.x=element_blank(), #remove x axis labels
+        axis.ticks.x=element_blank(), #remove x axis ticks
+        axis.text.y=element_blank(),  #remove y axis labels
+        axis.ticks.y=element_blank(),  #remove y axis ticks
+        text = element_text(size = 16))
+```
